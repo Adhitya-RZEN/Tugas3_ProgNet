@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import java.lang.String?>
+
+<GridPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+          fx:controller="com.bytebox.ui.DownloadItemController" hgap="10" vgap="5"
+          maxWidth="Infinity" styleClass="download-card">
+    <columnConstraints>
+        <ColumnConstraints percentWidth="4" />
+        <ColumnConstraints percentWidth="22" hgrow="ALWAYS" />
+        <ColumnConstraints percentWidth="10" />
+        <ColumnConstraints percentWidth="20" hgrow="ALWAYS" />
+        <ColumnConstraints percentWidth="12" />
+        <ColumnConstraints percentWidth="14" />
+        <ColumnConstraints percentWidth="18" />
+    </columnConstraints>
+
+    <Label fx:id="rowNumberLabel" text="1" GridPane.columnIndex="0" styleClass="table-row-number" />
+    <HBox GridPane.columnIndex="1" alignment="CENTER_LEFT" spacing="10" GridPane.hgrow="ALWAYS" styleClass="file-cell">
+        <StackPane fx:id="fileIconContainer" minWidth="40" prefWidth="40" maxWidth="40" minHeight="44" prefHeight="44" maxHeight="44" styleClass="file-icon">
+            <Label fx:id="fileTypeIcon" text="FILE" styleClass="file-icon-glyph" />
+        </StackPane>
+        <VBox spacing="4" HBox.hgrow="ALWAYS">
+            <Label fx:id="fileNameLabel" text="file.zip" maxWidth="Infinity" textOverrun="ELLIPSIS" styleClass="file-name" />
+            <Label fx:id="sourceLabel" text="https://example.test/file.zip" textOverrun="ELLIPSIS"
+                   maxWidth="Infinity" styleClass="source-url" />
+        </VBox>
+    </HBox>
+    <Label fx:id="sizeLabel" text="0 B of 0 B" GridPane.columnIndex="2" maxWidth="Infinity" textOverrun="ELLIPSIS"
+           styleClass="detail-label"><styleClass><String fx:value="table-cell-text" /></styleClass></Label>
+    <VBox GridPane.columnIndex="3" spacing="5" GridPane.hgrow="ALWAYS">
+        <Label fx:id="progressLabel" text="0%" maxWidth="Infinity" styleClass="detail-strong" />
+        <ProgressBar fx:id="progressBar" progress="-1" maxWidth="Infinity" styleClass="download-progress" />
+    </VBox>
+    <VBox GridPane.columnIndex="4" spacing="3">
+        <Label fx:id="speedLabel" text="—" styleClass="detail-strong" />
+        <Label fx:id="etaLabel" text="ETA —" styleClass="detail-label" />
+    </VBox>
+    <Label fx:id="statusBadge" text="● QUEUED" GridPane.columnIndex="5" maxWidth="Infinity"
+           styleClass="status-badge"><styleClass><String fx:value="badge-base" /></styleClass></Label>
+    <HBox GridPane.columnIndex="6" alignment="CENTER" spacing="7" styleClass="download-actions" GridPane.hgrow="ALWAYS">
+        <Button fx:id="pauseButton" text="Ⅱ" accessibleText="Pause download" styleClass="button-small"><styleClass><String fx:value="button-lilac" /></styleClass></Button>
+        <Button fx:id="resumeButton" text="▶" accessibleText="Resume download" styleClass="button-small"><styleClass><String fx:value="button-mint" /></styleClass></Button>
+        <Button fx:id="restartButton" text="↻" accessibleText="Restart download from zero" styleClass="button-small"><styleClass><String fx:value="button-peach" /></styleClass></Button>
+        <Button fx:id="openButton" text="↗" accessibleText="Open downloaded file" styleClass="button-small"><styleClass><String fx:value="button-mint" /></styleClass></Button>
+        <Button fx:id="cancelButton" text="×" accessibleText="Cancel download" styleClass="button-small"><styleClass><String fx:value="button-cancel" /></styleClass></Button>
+        <Button fx:id="moreButton" text="⋮" accessibleText="More download actions" styleClass="button-small"><styleClass><String fx:value="button-neutral" /></styleClass></Button>
+    </HBox>
+    <Label fx:id="errorLabel" text="" wrapText="true" maxWidth="Infinity" GridPane.rowIndex="1"
+           GridPane.columnIndex="1" GridPane.columnSpan="6" styleClass="download-error" />
+</GridPane>

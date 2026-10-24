@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.control.ToggleGroup?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Priority?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.shape.Circle?>
+<?import javafx.scene.shape.Arc?>
+<?import javafx.scene.shape.Ellipse?>
+<?import javafx.scene.shape.Line?>
+<?import javafx.scene.shape.Polygon?>
+<?import javafx.geometry.Insets?>
+<?import java.lang.String?>
+
+<BorderPane xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1"
+            fx:id="appShell" fx:controller="com.bytebox.ui.DashboardController" styleClass="app-shell">
+    <fx:define>
+        <ToggleGroup fx:id="statusToggleGroup" />
+    </fx:define>
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="13" styleClass="topbar">
+            <HBox alignment="CENTER_LEFT" spacing="11" styleClass="brand-lockup">
+                <Pane minWidth="68" prefWidth="68" maxWidth="68" minHeight="68" prefHeight="68" maxHeight="68" styleClass="brand-mark" accessibleText="BYTEBOX cube logo">
+                    <Polygon points="2,23,34,5,66,23,34,41" styleClass="cube-top" />
+                    <Polygon points="2,23,34,41,34,66,2,48" styleClass="cube-left" />
+                    <Polygon points="34,41,66,23,66,48,34,66" styleClass="cube-right" />
+                    <Line startX="34" startY="41" endX="34" endY="66" styleClass="cube-edge" />
+                </Pane>
+                <VBox spacing="0">
+                    <Label text="BYTEBOX" styleClass="brand-name" />
+                    <Label text="DOWNLOAD MANAGER" styleClass="brand-caption" />
+                </VBox>
+            </HBox>
+            <HBox alignment="CENTER_LEFT" spacing="9" HBox.hgrow="ALWAYS" styleClass="url-entry">
+                <Pane minWidth="28" prefWidth="28" maxWidth="28" minHeight="26" prefHeight="26" maxHeight="26" accessibleText="Download link">
+                    <Ellipse centerX="9" centerY="16" radiusX="7" radiusY="4" rotate="-45" styleClass="url-chain" />
+                    <Ellipse centerX="19" centerY="10" radiusX="7" radiusY="4" rotate="-45" styleClass="url-chain" />
+                </Pane>
+                <TextField fx:id="urlInput" promptText="Paste download link here…" onAction="#addDownload"
+                           accessibleText="File URL" HBox.hgrow="ALWAYS" styleClass="url-input" />
+                <Button fx:id="clearUrlButton" text="×" onAction="#clearUrl" styleClass="url-clear" accessibleText="Clear URL" />
+            </HBox>
+            <Button fx:id="addButton" text="＋  ADD DOWNLOAD" onAction="#addDownload" styleClass="button-primary" />
+            <Button text="⚙" onAction="#chooseDownloadDirectory" accessibleText="Choose download folder">
+                <styleClass><String fx:value="toolbar-icon" /><String fx:value="toolbar-settings" /></styleClass>
+            </Button>
+            <Button onAction="#openDownloadFolder" accessibleText="Open download folder">
+                <styleClass><String fx:value="toolbar-icon" /><String fx:value="toolbar-folder" /></styleClass>
+                <graphic>
+                    <StackPane minWidth="25" prefWidth="25" maxWidth="25" minHeight="25" prefHeight="25" maxHeight="25">
+                        <Polygon points="2,7,10,7,13,10,23,10,23,21,2,21" styleClass="folder-mark-shape" />
+                    </StackPane>
+                </graphic>
+            </Button>
+            <Button text="•••" onAction="#showAbout" accessibleText="About BYTEBOX">
+                <styleClass><String fx:value="toolbar-icon" /><String fx:value="toolbar-more" /></styleClass>
+            </Button>
+        </HBox>
+    </top>
+    <left>
+        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="AS_NEEDED" styleClass="sidebar-scroll">
+          <content>
+        <VBox spacing="8" styleClass="sidebar">
+            <Label text="YOUR SPACE" styleClass="sidebar-heading" />
+            <Button fx:id="dashboardNav" onAction="#showDashboard" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="Dashboard">
+                <graphic><HBox alignment="CENTER_LEFT" spacing="12"><Label text="⌂" styleClass="nav-icon" /><Label text="Dashboard" HBox.hgrow="ALWAYS" /></HBox></graphic>
+            </Button>
+            <Button fx:id="downloadsNav" onAction="#showDownloads" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="All downloads">
+                <graphic><HBox alignment="CENTER_LEFT" spacing="12"><Label text="⇩" styleClass="nav-icon" /><Label text="Downloads" HBox.hgrow="ALWAYS" /><Label fx:id="downloadsNavCount" text="0" styleClass="sidebar-count" /></HBox></graphic>
+            </Button>
+            <Button fx:id="queueNav" onAction="#showQueue" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="Download queue">
+                <graphic><HBox alignment="CENTER_LEFT" spacing="12"><Label text="☷" styleClass="nav-icon" /><Label text="Queue" HBox.hgrow="ALWAYS" /><Label fx:id="queueNavCount" text="0" styleClass="sidebar-count"><styleClass><String fx:value="badge-yellow" /></styleClass></Label></HBox></graphic>
+            </Button>
+            <Button fx:id="completedNav" onAction="#showCompleted" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="Completed downloads">
+                <graphic><HBox alignment="CENTER_LEFT" spacing="12"><Label text="✓" styleClass="nav-icon" /><Label text="Completed" HBox.hgrow="ALWAYS" /><Label fx:id="completedNavCount" text="0" styleClass="sidebar-count"><styleClass><String fx:value="badge-mint" /></styleClass></Label></HBox></graphic>
+            </Button>
+            <Button fx:id="failedNav" onAction="#showFailed" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="Failed downloads">
+                <graphic><HBox alignment="CENTER_LEFT" spacing="12"><Label text="!" styleClass="nav-icon" /><Label text="Failed" HBox.hgrow="ALWAYS" /><Label fx:id="failedNavCount" text="0" styleClass="sidebar-count"><styleClass><String fx:value="badge-peach" /></styleClass></Label></HBox></graphic>
+            </Button>
+            <Region minHeight="1" prefHeight="2" maxHeight="2" styleClass="sidebar-separator" />
+            <Label text="PREFERENCES" styleClass="sidebar-heading" />
+            <Button text="⚙   Download folder" onAction="#chooseDownloadDirectory" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="Choose download folder" />
+            <Label fx:id="downloadDirectoryLabel" text="Loading folder…" maxWidth="Infinity" textOverrun="ELLIPSIS" styleClass="sidebar-path" />
+            <Button text="ⓘ   About BYTEBOX" onAction="#showAbout" maxWidth="Infinity" styleClass="sidebar-item" accessibleText="About BYTEBOX" />
+            <Region VBox.vgrow="ALWAYS" />
+            <VBox alignment="CENTER" minHeight="238" prefHeight="238" maxHeight="238" styleClass="mascot-card">
+                <HBox alignment="CENTER_LEFT" spacing="9">
+                    <Pane minWidth="124" prefWidth="124" maxWidth="124" minHeight="158" prefHeight="158" maxHeight="158" styleClass="mascot-cube" accessibleText="Smiling BYTEBOX cube mascot">
+                        <Line startX="15" startY="31" endX="22" endY="19" styleClass="mascot-ray" />
+                        <Line startX="5" startY="47" endX="17" endY="47" styleClass="mascot-ray" />
+                        <Line startX="11" startY="63" endX="20" endY="71" styleClass="mascot-ray" />
+                        <Polygon points="6,39,66,6,126,39,66,73" styleClass="mascot-top" />
+                        <Polygon points="6,39,66,73,66,150,6,116" styleClass="mascot-left" />
+                        <Polygon points="66,73,126,39,126,116,66,150" styleClass="mascot-right" />
+                        <Line startX="66" startY="73" endX="66" endY="150" styleClass="mascot-edge" />
+                        <Line startX="108" startY="50" endX="119" endY="42" styleClass="mascot-ray" />
+                        <Line startX="111" startY="66" endX="123" endY="66" styleClass="mascot-ray" />
+                        <Circle centerX="96" centerY="94" radius="4" styleClass="mascot-eye" />
+                        <Line startX="87" startY="107" endX="101" endY="110" styleClass="mascot-smile" />
+                    </Pane>
+                    <VBox spacing="6">
+                        <Label text="FAST" styleClass="mascot-word" />
+                        <Label text="SIMPLE" styleClass="mascot-word" />
+                        <Label text="RELIABLE." styleClass="mascot-word" />
+                    </VBox>
+                </HBox>
+            </VBox>
+        </VBox>
+          </content>
+        </ScrollPane>
+    </left>
+    <center>
+        <VBox spacing="14" styleClass="main-content">
+            <GridPane hgap="14" vgap="14" styleClass="summary-grid">
+                <columnConstraints>
+                    <ColumnConstraints percentWidth="25" hgrow="ALWAYS" />
+                    <ColumnConstraints percentWidth="25" hgrow="ALWAYS" />
+                    <ColumnConstraints percentWidth="25" hgrow="ALWAYS" />
+                    <ColumnConstraints percentWidth="25" hgrow="ALWAYS" />
+                </columnConstraints>
+                <HBox GridPane.columnIndex="0" alignment="CENTER_LEFT" spacing="14" styleClass="summary-card">
+                    <styleClass><String fx:value="summary-mint" /></styleClass>
+                    <StackPane minWidth="68" prefWidth="68" maxWidth="68" minHeight="68" prefHeight="68" maxHeight="68" styleClass="summary-icon"><Label text="⬇" styleClass="summary-icon-glyph" /></StackPane>
+                    <VBox alignment="CENTER_LEFT" minWidth="0" spacing="3" HBox.hgrow="ALWAYS">
+                        <Label text="ACTIVE&#10;DOWNLOADS" minWidth="0" wrapText="true" maxWidth="Infinity" styleClass="summary-label" />
+                        <HBox alignment="BASELINE_LEFT" spacing="6">
+                            <Label fx:id="activeCount" text="0" styleClass="summary-value" />
+                            <Label fx:id="activeTotal" text="/ 0 Tasks" styleClass="summary-task-total" />
+                        </HBox>
+                    </VBox>
+                </HBox>
+                <HBox GridPane.columnIndex="1" alignment="CENTER_LEFT" spacing="14" styleClass="summary-card">
+                    <styleClass><String fx:value="summary-lilac" /></styleClass>
+                    <StackPane minWidth="68" prefWidth="68" maxWidth="68" minHeight="68" prefHeight="68" maxHeight="68" styleClass="summary-icon"><Label text="Ⅱ" styleClass="summary-icon-glyph" /></StackPane>
+                    <VBox alignment="CENTER_LEFT" minWidth="0" spacing="3" HBox.hgrow="ALWAYS">
+                        <Label text="PAUSED&#10;DOWNLOADS" minWidth="0" wrapText="true" maxWidth="Infinity" styleClass="summary-label" />
+                        <Label fx:id="pausedCount" text="0" styleClass="summary-value" />
+                    </VBox>
+                </HBox>
+                <HBox GridPane.columnIndex="2" alignment="CENTER_LEFT" spacing="14" styleClass="summary-card">
+                    <styleClass><String fx:value="summary-peach" /></styleClass>
+                    <StackPane minWidth="68" prefWidth="68" maxWidth="68" minHeight="68" prefHeight="68" maxHeight="68" styleClass="summary-icon"><Label text="◷" styleClass="summary-icon-glyph" /></StackPane>
+                    <VBox alignment="CENTER_LEFT" minWidth="0" spacing="3" HBox.hgrow="ALWAYS">
+                        <Label text="QUEUED&#10;DOWNLOADS" minWidth="0" wrapText="true" maxWidth="Infinity" styleClass="summary-label" />
+                        <Label fx:id="queuedCount" text="0" styleClass="summary-value" />
+                    </VBox>
+                </HBox>
+                <HBox GridPane.columnIndex="3" alignment="CENTER_LEFT" spacing="14" styleClass="summary-card">
+                    <styleClass><String fx:value="summary-yellow" /></styleClass>
+                    <StackPane minWidth="68" prefWidth="68" maxWidth="68" minHeight="68" prefHeight="68" maxHeight="68" styleClass="summary-icon"><Label text="✓" styleClass="summary-icon-glyph" /></StackPane>
+                    <VBox alignment="CENTER_LEFT" minWidth="0" spacing="3" HBox.hgrow="ALWAYS">
+                        <Label text="COMPLETED&#10;DOWNLOADS" minWidth="0" wrapText="true" maxWidth="Infinity" styleClass="summary-label" />
+                        <Label fx:id="completedCount" text="0" styleClass="summary-value" />
+                    </VBox>
+                </HBox>
+            </GridPane>
+
+            <StackPane VBox.vgrow="ALWAYS" styleClass="list-frame">
+                <ScrollPane fitToWidth="true" fitToHeight="true" hbarPolicy="NEVER" styleClass="download-scroll">
+                    <content>
+                        <VBox fx:id="tableContent" spacing="0" styleClass="table-content">
+                            <HBox alignment="CENTER_LEFT" spacing="10" styleClass="downloads-toolbar">
+                                <Label text="DOWNLOADS" styleClass="section-title" />
+                                <Region HBox.hgrow="ALWAYS" />
+                                <HBox spacing="0" styleClass="filter-tabs">
+                                    <ToggleButton fx:id="allFilter" text="All (0)" userData="All downloads" toggleGroup="$statusToggleGroup" accessibleText="Show all downloads" />
+                                    <ToggleButton fx:id="activeFilter" text="Downloading (0)" userData="Active" toggleGroup="$statusToggleGroup" accessibleText="Show active downloads" />
+                                    <ToggleButton fx:id="pausedFilter" text="Paused (0)" userData="Paused" toggleGroup="$statusToggleGroup" accessibleText="Show paused downloads" />
+                                    <ToggleButton fx:id="queuedFilter" text="Queued (0)" userData="Queued" toggleGroup="$statusToggleGroup" accessibleText="Show queued downloads" />
+                                    <ToggleButton fx:id="completedFilter" text="Completed (0)" userData="Completed" toggleGroup="$statusToggleGroup" accessibleText="Show completed downloads" />
+                                    <ToggleButton fx:id="failedFilter" text="Failed (0)" userData="Failed" toggleGroup="$statusToggleGroup" accessibleText="Show failed downloads" />
+                                </HBox>
+                            </HBox>
+                            <GridPane hgap="10" maxWidth="Infinity" styleClass="table-header">
+                                <columnConstraints>
+                                    <ColumnConstraints percentWidth="4" />
+                                    <ColumnConstraints percentWidth="22" hgrow="ALWAYS" />
+                                    <ColumnConstraints percentWidth="10" />
+                                    <ColumnConstraints percentWidth="20" hgrow="ALWAYS" />
+                                    <ColumnConstraints percentWidth="12" />
+                                    <ColumnConstraints percentWidth="14" />
+                                    <ColumnConstraints percentWidth="18" />
+                                </columnConstraints>
+                                <Label text="#" alignment="CENTER" GridPane.columnIndex="0" styleClass="table-heading" />
+                                <Label text="FILE NAME" GridPane.columnIndex="1" styleClass="table-heading" />
+                                <Label text="SIZE" GridPane.columnIndex="2" styleClass="table-heading" />
+                                <Label text="PROGRESS" GridPane.columnIndex="3" styleClass="table-heading" />
+                                <Label text="SPEED / ETA" GridPane.columnIndex="4" styleClass="table-heading" />
+                                <Label text="STATUS" GridPane.columnIndex="5" styleClass="table-heading" />
+                                <Label text="ACTIONS" alignment="CENTER" GridPane.columnIndex="6" styleClass="table-heading" />
+                            </GridPane>
+                            <VBox fx:id="downloadList" spacing="8" VBox.vgrow="ALWAYS" styleClass="download-list" />
+                            <VBox fx:id="emptyState" alignment="CENTER" spacing="7" VBox.vgrow="ALWAYS" styleClass="empty-state">
+                                <Label text="✳" styleClass="empty-icon" />
+                                <Label fx:id="emptyTitle" text="A fresh start" styleClass="empty-title" />
+                                <Label fx:id="emptyMessage" text="Paste a direct file link above and BYTEBOX will take it from there." wrapText="true" styleClass="empty-message" />
+                            </VBox>
+                        </VBox>
+                    </content>
+                </ScrollPane>
+            </StackPane>
+
+        </VBox>
+    </center>
+    <bottom>
+            <HBox alignment="CENTER_LEFT" spacing="13" styleClass="status-bar">
+                <BorderPane.margin><Insets top="9" right="10" bottom="10" left="10" /></BorderPane.margin>
+                <StackPane minWidth="54" prefWidth="54" maxWidth="54" minHeight="54" prefHeight="54" maxHeight="54" styleClass="footer-ring">
+                    <ProgressIndicator fx:id="totalProgressRing" progress="0" styleClass="progress-ring" />
+                    <Label fx:id="totalProgress" text="0%" styleClass="ring-label" />
+                </StackPane>
+                <VBox spacing="5" HBox.hgrow="ALWAYS" styleClass="footer-progress-block">
+                    <HBox alignment="CENTER_LEFT"><Label text="TOTAL PROGRESS" styleClass="eyebrow" /><Region HBox.hgrow="ALWAYS" /><Label fx:id="footerMessage" text="Starting BYTEBOX…" maxWidth="200" textOverrun="ELLIPSIS" styleClass="footer-message" /></HBox>
+                    <ProgressBar fx:id="totalProgressBar" progress="0" maxWidth="Infinity" styleClass="footer-progress" />
+                </VBox>
+                <Region minWidth="1" prefWidth="1" maxWidth="1" styleClass="footer-divider" />
+                <HBox alignment="CENTER_LEFT" spacing="9" styleClass="footer-summary-block">
+                    <Pane minWidth="32" prefWidth="32" maxWidth="32" minHeight="30" prefHeight="30" maxHeight="30" accessibleText="Download speed">
+                        <Arc centerX="16" centerY="18" radiusX="12" radiusY="12" startAngle="0" length="180" type="OPEN" styleClass="footer-vector-arc" />
+                        <Line startX="4" startY="18" endX="28" endY="18" styleClass="footer-vector-line" />
+                        <Line startX="16" startY="18" endX="22" endY="9" styleClass="footer-vector-line" />
+                    </Pane>
+                    <VBox spacing="3"><Label text="DOWNLOAD SPEED" styleClass="eyebrow" /><Label fx:id="activeSpeed" text="—" styleClass="footer-stat-value" /></VBox>
+                </HBox>
+                <Region minWidth="1" prefWidth="1" maxWidth="1" styleClass="footer-divider" />
+                <HBox alignment="CENTER_LEFT" spacing="9" styleClass="footer-summary-block">
+                    <Pane minWidth="32" prefWidth="32" maxWidth="32" minHeight="32" prefHeight="32" maxHeight="32" accessibleText="Estimated time remaining">
+                        <Ellipse centerX="16" centerY="16" radiusX="12" radiusY="12" styleClass="footer-vector-outline" />
+                        <Line startX="16" startY="16" endX="16" endY="8" styleClass="footer-vector-line" />
+                        <Line startX="16" startY="16" endX="22" endY="19" styleClass="footer-vector-line" />
+                    </Pane>
+                    <VBox spacing="3"><Label text="ETA (ALL)" styleClass="eyebrow" /><Label fx:id="totalEta" text="—" styleClass="footer-stat-value" /></VBox>
+                </HBox>
+                <Region minWidth="1" prefWidth="1" maxWidth="1" styleClass="footer-divider" />
+                <HBox alignment="CENTER_LEFT" spacing="9" styleClass="footer-summary-block">
+                    <Pane minWidth="34" prefWidth="34" maxWidth="34" minHeight="32" prefHeight="32" maxHeight="32" accessibleText="Active connections">
+                        <Line startX="17" startY="7" endX="7" endY="24" styleClass="footer-vector-line" />
+                        <Line startX="17" startY="7" endX="27" endY="24" styleClass="footer-vector-line" />
+                        <Circle centerX="17" centerY="7" radius="4" styleClass="footer-vector-node" />
+                        <Circle centerX="7" centerY="24" radius="4" styleClass="footer-vector-node" />
+                        <Circle centerX="27" centerY="24" radius="4" styleClass="footer-vector-node" />
+                    </Pane>
+                    <VBox spacing="3"><Label text="ACTIVE CONNECTIONS" styleClass="eyebrow" /><Label fx:id="connectionCount" text="0 / 3" styleClass="footer-stat-value" /></VBox>
+                </HBox>
+            </HBox>
+    </bottom>
+</BorderPane>
