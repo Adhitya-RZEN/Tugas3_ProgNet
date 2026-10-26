@@ -11,8 +11,8 @@ import java.util.concurrent.Future;
 final class DownloadJob {
     final UUID id;
     final URI source;
-    final String fileName;
-    final Path destination;
+    volatile String fileName;
+    volatile Path destination;
     final Path partialFile;
     final Instant createdAt;
 

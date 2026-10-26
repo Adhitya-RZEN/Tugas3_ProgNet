@@ -10,6 +10,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
@@ -17,6 +18,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.net.ssl.SSLException;
 
 final class HttpDownloadWorker {
     private static final Pattern CONTENT_RANGE = Pattern.compile("(?i)^bytes\\s+(\\d+)-(\\d+)/(\\d+|\\*)$");
@@ -34,6 +36,10 @@ final class HttpDownloadWorker {
     void run(DownloadJob job) {
         manager.workerStarted(job);
         try {
+            if (isVideoPage(job.source)) {
+                manager.workerFailed(job, "This URL points to a video webpage, not a direct video file.", false);
+                return;
+            }
             if (manager.shouldStop(job)) {
                 finishStop(job);
                 return;
@@ -89,9 +95,13 @@ final class HttpDownloadWorker {
                     long beforeSegment = transferred;
                     InputStream activeBody = null;
                     try (InputStream rawBody = connection.getInputStream();
-                         InputStream body = new BufferedInputStream(rawBody, BUFFER_SIZE)) {
+                         BufferedInputStream body = new BufferedInputStream(rawBody, BUFFER_SIZE)) {
                         activeBody = body;
                         job.activeStream = body;
+                        if (isUnexpectedHtmlBody(job, connection, body)) {
+                            manager.workerFailed(job, htmlResponseMessage(job, null), transferred > 0);
+                            return;
+                        }
                         long segmentBytes = writeBody(job, body, beforeSegment, segment.length());
                         if (manager.shouldStop(job)) {
                             finishStop(job);
@@ -265,11 +275,21 @@ final class HttpDownloadWorker {
 
     private RangeSegment validateResponse(DownloadJob job, HttpURLConnection response, int statusCode,
                                           long requestedOffset) throws IOException {
+        String contentDisposition = header(response, "Content-Disposition");
+        String responseFileName = FileNameResolver.fileNameFromContentDisposition(contentDisposition);
         if (requestedOffset == 0) {
             if (statusCode != HttpURLConnection.HTTP_OK) {
-                manager.workerFailed(job, "The server returned HTTP " + statusCode + " for the download request.", false);
+                manager.workerFailed(job, httpFailureMessage(response, statusCode, false), false);
                 return null;
             }
+            if (isVideoPage(response.getURL())
+                    || (isHtmlMime(header(response, "Content-Type")) && !explicitHtml(job.source, responseFileName))) {
+                manager.workerFailed(job, isVideoPage(response.getURL())
+                        ? "This URL points to a video webpage, not a direct video file."
+                        : htmlResponseMessage(job, responseFileName), false);
+                return null;
+            }
+            manager.applyContentDispositionFilename(job, responseFileName);
             Long contentLength = contentLength(response);
             manager.setTotalBytes(job, contentLength);
             manager.updateValidators(job, header(response, "ETag"), header(response, "Last-Modified"));
@@ -277,10 +297,26 @@ final class HttpDownloadWorker {
         }
 
         if (statusCode != HttpURLConnection.HTTP_PARTIAL) {
+            if (statusCode == HttpURLConnection.HTTP_OK
+                    && (isVideoPage(response.getURL())
+                    || (isHtmlMime(header(response, "Content-Type")) && !explicitHtml(job.source, responseFileName)))) {
+                manager.workerFailed(job, isVideoPage(response.getURL())
+                        ? "This URL points to a video webpage, not a direct video file."
+                        : htmlResponseMessage(job, responseFileName), true);
+                return null;
+            }
             String message = statusCode == HttpURLConnection.HTTP_OK
                     ? "The server ignored the Range request. Your partial file is safe; restart from zero to continue."
-                    : "The server returned HTTP " + statusCode + " while resuming. Restart from zero to continue safely.";
+                    : httpFailureMessage(response, statusCode, true);
             manager.workerFailed(job, message, true);
+            return null;
+        }
+
+        if (isVideoPage(response.getURL())
+                || (isHtmlMime(header(response, "Content-Type")) && !explicitHtml(job.source, responseFileName))) {
+            manager.workerFailed(job, isVideoPage(response.getURL())
+                    ? "This URL points to a video webpage, not a direct video file."
+                    : htmlResponseMessage(job, responseFileName), true);
             return null;
         }
 
@@ -332,6 +368,146 @@ final class HttpDownloadWorker {
         manager.updateValidators(job, responseEtag, responseLastModified);
         manager.setTotalBytes(job, effectiveTotal);
         return new RangeSegment(rangeLength, effectiveTotal);
+    }
+
+    private static boolean isUnexpectedHtmlBody(DownloadJob job, HttpURLConnection response, BufferedInputStream body)
+            throws IOException {
+        String fileName = FileNameResolver.fileNameFromContentDisposition(header(response, "Content-Disposition"));
+        if (explicitHtml(job.source, fileName)) {
+            return false;
+        }
+        if (isHtmlMime(header(response, "Content-Type"))) {
+            return true;
+        }
+        return looksLikeHtml(body);
+    }
+
+    private static boolean looksLikeHtml(BufferedInputStream body) throws IOException {
+        body.mark(4096);
+        byte[] prefix = new byte[4096];
+        int length = 0;
+        while (length < prefix.length) {
+            int count = body.read(prefix, length, prefix.length - length);
+            if (count < 0) {
+                break;
+            }
+            length += count;
+            if (length >= 512) {
+                break;
+            }
+        }
+        body.reset();
+        if (length == 0) {
+            return false;
+        }
+        String text = new String(prefix, 0, length, StandardCharsets.UTF_8);
+        if (!text.isEmpty() && text.charAt(0) == '\ufeff') {
+            text = text.substring(1);
+        }
+        text = text.stripLeading().toLowerCase(Locale.ROOT);
+        while (text.startsWith("<!--")) {
+            int commentEnd = text.indexOf("-->");
+            if (commentEnd < 0) {
+                return false;
+            }
+            text = text.substring(commentEnd + 3).stripLeading();
+        }
+        return text.startsWith("<!doctype html") || text.startsWith("<html")
+                || text.startsWith("<head") || text.startsWith("<body") || text.startsWith("<title");
+    }
+
+    private static boolean explicitHtml(java.net.URI source, String contentDispositionFileName) {
+        return isHtmlFileName(source.getPath()) || isHtmlFileName(contentDispositionFileName);
+    }
+
+    private static boolean isHtmlFileName(String fileName) {
+        if (fileName == null) {
+            return false;
+        }
+        String normalized = fileName.toLowerCase(Locale.ROOT);
+        return normalized.endsWith(".html") || normalized.endsWith(".htm");
+    }
+
+    private static boolean isHtmlMime(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String mimeType = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return mimeType.equals("text/html") || mimeType.equals("application/xhtml+xml");
+    }
+
+    private static boolean isVideoPage(java.net.URI uri) {
+        String host = uri.getHost();
+        if (host == null) {
+            return false;
+        }
+        return isVideoPage(host, uri.getPath());
+    }
+
+    private static boolean isVideoPage(URL url) {
+        return isVideoPage(url.getHost(), url.getPath());
+    }
+
+    private static boolean isVideoPage(String rawHost, String rawPath) {
+        String host = rawHost.toLowerCase(Locale.ROOT);
+        String path = rawPath == null ? "/" : rawPath.toLowerCase(Locale.ROOT);
+        if (host.equals("youtu.be") || host.endsWith(".youtu.be")) {
+            return path.length() > 1;
+        }
+        boolean youtubeHost = host.equals("youtube.com") || host.endsWith(".youtube.com")
+                || host.equals("youtube-nocookie.com") || host.endsWith(".youtube-nocookie.com");
+        return youtubeHost && (path.equals("/watch") || path.startsWith("/shorts/")
+                || path.startsWith("/live/") || path.startsWith("/embed/")
+                || path.startsWith("/v/") || path.startsWith("/clip/"));
+    }
+
+    private static String htmlResponseMessage(DownloadJob job, String responseFileName) {
+        String candidate = responseFileName == null ? job.fileName : responseFileName;
+        int dot = candidate.lastIndexOf('.');
+        String extension = dot < 0 ? "" : candidate.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (Set.of("mp4", "m4v", "mov", "mkv", "webm", "avi", "mp3", "m4a", "aac", "ogg", "wav", "flac")
+                .contains(extension)) {
+            return "The server returned HTML instead of the expected media file.";
+        }
+        return "The server returned an HTML page instead of a direct file download.";
+    }
+
+    private static String httpFailureMessage(HttpURLConnection response, int statusCode, boolean resuming) {
+        String reason = statusReason(statusCode);
+        String status = "HTTP " + statusCode + (reason.isEmpty() ? "" : " " + reason);
+        if (isCloudflareChallenge(response, statusCode)) {
+            return "The server returned a Cloudflare challenge (" + status + "). Direct downloads are unavailable for this response.";
+        }
+        return "The server returned " + status + (resuming
+                ? " while resuming. Restart from zero to continue safely."
+                : " for the download request.");
+    }
+
+    private static boolean isCloudflareChallenge(HttpURLConnection response, int statusCode) {
+        String mitigation = header(response, "cf-mitigated");
+        if (mitigation != null && mitigation.equalsIgnoreCase("challenge")) {
+            return true;
+        }
+        String server = header(response, "Server");
+        return (statusCode == 403 || statusCode == 429 || statusCode == 503)
+                && server != null && server.toLowerCase(Locale.ROOT).contains("cloudflare")
+                && isHtmlMime(header(response, "Content-Type"));
+    }
+
+    private static String statusReason(int statusCode) {
+        return switch (statusCode) {
+            case 400 -> "Bad Request";
+            case 401 -> "Unauthorized";
+            case 403 -> "Forbidden";
+            case 404 -> "Not Found";
+            case 408 -> "Request Timeout";
+            case 429 -> "Too Many Requests";
+            case 500 -> "Internal Server Error";
+            case 502 -> "Bad Gateway";
+            case 503 -> "Service Unavailable";
+            case 504 -> "Gateway Timeout";
+            default -> "";
+        };
     }
 
     private long writeBody(DownloadJob job, InputStream body, long currentBytes, Long expectedSegmentLength) throws IOException {
@@ -428,7 +604,16 @@ final class HttpDownloadWorker {
         }
     }
 
-    private static String readableMessage(Throwable throwable) {
+    static String readableMessage(Throwable throwable) {
+        for (Throwable cause = throwable; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SSLException) {
+                return "TLS connection failed: " + messageOf(cause);
+            }
+        }
+        return messageOf(throwable);
+    }
+
+    private static String messageOf(Throwable throwable) {
         String message = throwable.getMessage();
         return message == null || message.isBlank() ? throwable.getClass().getSimpleName() : message;
     }

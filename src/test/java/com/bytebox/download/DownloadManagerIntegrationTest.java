@@ -15,12 +15,17 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.Proxy;
+import java.net.ProxySelector;
+import java.net.SocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +37,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
+import javax.net.ssl.SSLHandshakeException;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,17 +53,37 @@ class DownloadManagerIntegrationTest {
 
     private HttpServer server;
     private ExecutorService serverExecutor;
+    private ProxySelector previousProxySelector;
     private final AtomicInteger activeResponses = new AtomicInteger();
     private final AtomicInteger peakResponses = new AtomicInteger();
     private final AtomicReference<RangeBehavior> rangeBehavior = new AtomicReference<>(RangeBehavior.NORMAL);
     private final Map<String, AtomicInteger> requestCounts = new ConcurrentHashMap<>();
     private final Map<String, byte[]> contentByPath = new ConcurrentHashMap<>();
+    private final Map<String, FixtureResponse> fixtureResponses = new ConcurrentHashMap<>();
     private final ConcurrentLinkedQueue<String> rangeHeaders = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<String> ifRangeHeaders = new ConcurrentLinkedQueue<>();
 
     @BeforeEach
     void startServer() throws IOException {
-        server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        previousProxySelector = ProxySelector.getDefault();
+        ProxySelector.setDefault(new ProxySelector() {
+            @Override
+            public List<Proxy> select(URI uri) {
+                String host = uri.getHost();
+                if (host != null && (host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1") || host.equals("::1"))) {
+                    return List.of(Proxy.NO_PROXY);
+                }
+                return previousProxySelector == null ? List.of(Proxy.NO_PROXY) : previousProxySelector.select(uri);
+            }
+
+            @Override
+            public void connectFailed(URI uri, SocketAddress address, IOException exception) {
+                if (previousProxySelector != null) {
+                    previousProxySelector.connectFailed(uri, address, exception);
+                }
+            }
+        });
+        server = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
         serverExecutor = Executors.newFixedThreadPool(8);
         server.setExecutor(serverExecutor);
         server.createContext("/", this::respond);
@@ -66,6 +92,7 @@ class DownloadManagerIntegrationTest {
 
     @AfterEach
     void stopServer() {
+        ProxySelector.setDefault(previousProxySelector);
         if (server != null) {
             server.stop(0);
         }
@@ -385,7 +412,9 @@ class DownloadManagerIntegrationTest {
             UUID id = manager.add(url("/unknown/size.bin")).get(3, TimeUnit.SECONDS);
             DownloadSnapshot completed = await(manager, id, job -> job.status() == DownloadStatus.COMPLETED);
 
-            assertTrue(completed.indeterminate());
+            assertFalse(completed.indeterminate());
+            assertTrue(completed.sizeUnknown());
+            assertEquals(1, completed.progress());
             assertArrayEquals(content("/unknown/size.bin"), Files.readAllBytes(completed.destination()));
         }
     }
@@ -437,12 +466,149 @@ class DownloadManagerIntegrationTest {
         }
     }
 
+    @Test
+    void downloadsRepresentativeMediaImagesDocumentsArchivesAndGenericBytesExactly() throws Exception {
+        Map<String, Payload> formats = Map.of(
+                "/formats/photo.jpg", new Payload(Base64.getDecoder().decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAFf/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABBQJ//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAwEBPwF//8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAgBAgEBPwF//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQAGPwJ//8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPyF//9oADAMBAAIAAwAAABD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/IV//2Q=="), "image/jpeg"),
+                "/formats/photo.png", new Payload(Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG9sAAAAASUVORK5CYII="), "image/png"),
+                "/formats/photo.webp", new Payload(Base64.getDecoder().decode("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEAAUAmJaQAA3AA/v89WAAAAA=="), "image/webp"),
+                "/formats/video.mp4", new Payload(new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm', 0, 0, 2, 0, 'i', 's', 'o', 'm', 'i', 's', 'o', '2'}, "video/mp4"),
+                "/formats/audio.mp3", new Payload(new byte[]{'I', 'D', '3', 4, 0, 0, 0, 0, 0, 0, (byte) 0xff, (byte) 0xfb, (byte) 0x90, 0x64}, "audio/mpeg"),
+                "/formats/document.pdf", new Payload("%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n".getBytes(StandardCharsets.US_ASCII), "application/pdf"),
+                "/formats/archive.zip", new Payload(new byte[]{'P', 'K', 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, "application/zip"),
+                "/formats/payload.bin", new Payload(new byte[]{0, (byte) 0xff, 1, 2, 'B', 'Y', 'T', 'E', 0, 13}, "application/octet-stream"));
+        formats.forEach((path, payload) -> fixture(path, payload.bytes(), payload.contentType(), null, false, 200, null));
+
+        try (DownloadManager manager = newManager(temporaryDirectory.resolve("downloads"), 3)) {
+            Map<UUID, Payload> expected = new java.util.LinkedHashMap<>();
+            for (Map.Entry<String, Payload> entry : formats.entrySet()) {
+                expected.put(manager.add(url(entry.getKey())).get(3, TimeUnit.SECONDS), entry.getValue());
+            }
+
+            for (Map.Entry<UUID, Payload> entry : expected.entrySet()) {
+                DownloadSnapshot completed = await(manager, entry.getKey(), job -> job.status() == DownloadStatus.COMPLETED);
+                assertArrayEquals(entry.getValue().bytes(), Files.readAllBytes(completed.destination()), completed.fileName());
+            }
+        }
+    }
+
+    @Test
+    void rejectsYouTubeVideoPagesBeforeTreatingThemAsFiles() throws Exception {
+        try (DownloadManager manager = newManager(temporaryDirectory.resolve("downloads"), 1)) {
+            UUID shortLink = manager.add("https://youtu.be/QDia3e12czc?si=Em8pjt72-36MlZ7f").get(3, TimeUnit.SECONDS);
+            UUID watchPage = manager.add("https://www.youtube.com/watch?v=QDia3e12czc").get(3, TimeUnit.SECONDS);
+            DownloadSnapshot failed = await(manager, shortLink, job -> job.status() == DownloadStatus.FAILED);
+            DownloadSnapshot watchFailed = await(manager, watchPage, job -> job.status() == DownloadStatus.FAILED);
+
+            assertEquals("This URL points to a video webpage, not a direct video file.", failed.errorMessage());
+            assertEquals("This URL points to a video webpage, not a direct video file.", watchFailed.errorMessage());
+            assertFalse(Files.exists(failed.destination()));
+            assertFalse(Files.exists(failed.partialFile()));
+        }
+    }
+
+    @Test
+    void rejectsHtmlReturnedForMediaButAllowsAnExplicitHtmlFile() throws Exception {
+        byte[] page = "<!doctype html><html><title>not a video</title></html>".getBytes(StandardCharsets.UTF_8);
+        fixture("/media/not-really.mp4", page, "text/html; charset=UTF-8", null, false, 200, null);
+        fixture("/documents/manual.html", page, "text/html; charset=UTF-8", null, false, 200, null);
+        fixture("/documents/attached-html", page, "text/html; charset=UTF-8", "attachment; filename=manual.html", false, 200, null);
+        fixture("/media/hidden-page.mp4", page, "application/octet-stream", null, false, 200, null);
+
+        try (DownloadManager manager = newManager(temporaryDirectory.resolve("downloads"), 2)) {
+            UUID mediaId = manager.add(url("/media/not-really.mp4")).get(3, TimeUnit.SECONDS);
+            UUID htmlId = manager.add(url("/documents/manual.html")).get(3, TimeUnit.SECONDS);
+            UUID attachedHtmlId = manager.add(url("/documents/attached-html")).get(3, TimeUnit.SECONDS);
+            UUID hiddenPageId = manager.add(url("/media/hidden-page.mp4")).get(3, TimeUnit.SECONDS);
+            DownloadSnapshot rejected = await(manager, mediaId, job -> job.status() == DownloadStatus.FAILED);
+            DownloadSnapshot explicitHtml = await(manager, htmlId, job -> job.status() == DownloadStatus.COMPLETED);
+            DownloadSnapshot attachedHtml = await(manager, attachedHtmlId, job -> job.status() == DownloadStatus.COMPLETED);
+            DownloadSnapshot sniffed = await(manager, hiddenPageId, job -> job.status() == DownloadStatus.FAILED);
+
+            assertTrue(rejected.errorMessage().contains("HTML instead of the expected media file"));
+            assertTrue(sniffed.errorMessage().contains("HTML"));
+            assertArrayEquals(page, Files.readAllBytes(explicitHtml.destination()));
+            assertEquals("manual (1).html", attachedHtml.fileName());
+            assertArrayEquals(page, Files.readAllBytes(attachedHtml.destination()));
+            assertFalse(Files.exists(rejected.destination()));
+            assertFalse(Files.exists(sniffed.destination()));
+        }
+    }
+
+    @Test
+    void rejectsRedirectsThatEndAtAnHtmlPage() throws Exception {
+        byte[] page = "<html><body>landing page</body></html>".getBytes(StandardCharsets.UTF_8);
+        fixture("/documents/landing.html", page, "text/html", null, false, 200, null);
+
+        try (DownloadManager manager = newManager(temporaryDirectory.resolve("downloads"), 1)) {
+            UUID id = manager.add(url("/redirect-to-html.mp4")).get(3, TimeUnit.SECONDS);
+            DownloadSnapshot failed = await(manager, id, job -> job.status() == DownloadStatus.FAILED);
+
+            assertTrue(failed.errorMessage().contains("HTML"));
+            assertFalse(Files.exists(failed.destination()));
+        }
+    }
+
+    @Test
+    void usesAndSanitizesContentDispositionFilename() throws Exception {
+        byte[] document = "%PDF-1.7\nfixture\n%%EOF".getBytes(StandardCharsets.US_ASCII);
+        fixture("/download", document, "application/pdf", "attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf", false, 200, null);
+        fixture("/download-two", document, "application/pdf", "attachment; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf", false, 200, null);
+
+        try (DownloadManager manager = newManager(temporaryDirectory.resolve("downloads"), 2)) {
+            UUID id = manager.add(url("/download")).get(3, TimeUnit.SECONDS);
+            UUID secondId = manager.add(url("/download-two")).get(3, TimeUnit.SECONDS);
+            DownloadSnapshot completed = await(manager, id, job -> job.status() == DownloadStatus.COMPLETED);
+            DownloadSnapshot secondCompleted = await(manager, secondId, job -> job.status() == DownloadStatus.COMPLETED);
+
+            assertEquals(java.util.Set.of("résumé.pdf", "résumé (1).pdf"),
+                    java.util.Set.of(completed.fileName(), secondCompleted.fileName()));
+            assertNotEquals(completed.destination(), secondCompleted.destination());
+            assertEquals(temporaryDirectory.resolve("downloads").toAbsolutePath().normalize(), completed.destination().getParent());
+            assertArrayEquals(document, Files.readAllBytes(completed.destination()));
+            assertArrayEquals(document, Files.readAllBytes(secondCompleted.destination()));
+        }
+    }
+
+    @Test
+    void reportsCloudflareChallengeSeparatelyFromHttpStatusFailure() throws Exception {
+        fixture("/challenge", "challenge".getBytes(StandardCharsets.UTF_8), "text/html", null, false, 403, "challenge");
+        fixture("/forbidden", "denied".getBytes(StandardCharsets.UTF_8), "text/plain", null, false, 403, null);
+
+        try (DownloadManager manager = newManager(temporaryDirectory.resolve("downloads"), 1)) {
+            UUID id = manager.add(url("/challenge")).get(3, TimeUnit.SECONDS);
+            UUID forbiddenId = manager.add(url("/forbidden")).get(3, TimeUnit.SECONDS);
+            DownloadSnapshot failed = await(manager, id, job -> job.status() == DownloadStatus.FAILED);
+            DownloadSnapshot forbidden = await(manager, forbiddenId, job -> job.status() == DownloadStatus.FAILED);
+
+            assertTrue(failed.errorMessage().contains("Cloudflare"));
+            assertTrue(failed.errorMessage().contains("HTTP 403 Forbidden"));
+            assertTrue(forbidden.errorMessage().contains("HTTP 403 Forbidden"));
+            assertFalse(forbidden.errorMessage().contains("Cloudflare"));
+        }
+    }
+
+    @Test
+    void labelsTlsFailuresSeparatelyFromHttpFailures() {
+        String message = HttpDownloadWorker.readableMessage(
+                new IOException("connection setup failed", new SSLHandshakeException("certificate check failed")));
+
+        assertTrue(message.startsWith("TLS connection failed:"));
+        assertTrue(message.contains("certificate check failed"));
+    }
+
     private DownloadManager newManager(Path downloads, int concurrency) throws IOException {
         return new DownloadManager(temporaryDirectory.resolve("metadata"), downloads, concurrency);
     }
 
     private String url(String path) {
         return "http://127.0.0.1:" + server.getAddress().getPort() + path;
+    }
+
+    private void fixture(String path, byte[] bytes, String contentType, String contentDisposition,
+                        boolean unknownLength, int status, String cloudflareChallenge) {
+        fixtureResponses.put(path, new FixtureResponse(bytes, contentType, contentDisposition,
+                unknownLength, status, cloudflareChallenge));
     }
 
     private DownloadSnapshot await(DownloadManager manager, UUID id, Predicate<DownloadSnapshot> condition) throws Exception {
@@ -455,7 +621,9 @@ class DownloadManagerIntegrationTest {
             Thread.sleep(10);
         }
         DownloadSnapshot last = manager.snapshots().stream().filter(job -> job.id().equals(id)).findFirst().orElse(null);
-        throw new AssertionError("Timed out waiting for download state; last state=" + (last == null ? "missing" : last.status() + ": " + last.errorMessage()));
+        throw new AssertionError("Timed out waiting for download state; last state="
+                + (last == null ? "missing" : last.status() + ": " + last.errorMessage())
+                + ", requests=" + requestCounts + ", activeResponses=" + activeResponses.get());
     }
 
     private static void awaitCondition(java.util.function.BooleanSupplier condition, Duration timeout, String description) throws Exception {
@@ -491,6 +659,11 @@ class DownloadManagerIntegrationTest {
                 exchange.sendResponseHeaders(302, -1);
                 return;
             }
+            if (path.equals("/redirect-to-html.mp4")) {
+                exchange.getResponseHeaders().set("Location", "/documents/landing.html");
+                exchange.sendResponseHeaders(302, -1);
+                return;
+            }
             if (path.startsWith("/redirect-chain/")) {
                 int hop = Integer.parseInt(path.substring(path.lastIndexOf('/') + 1));
                 if (hop < 6) {
@@ -508,6 +681,24 @@ class DownloadManagerIntegrationTest {
                 byte[] message = "Fixture service unavailable".getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(503, message.length);
                 write(exchange.getResponseBody(), message, 0, message.length, false);
+                return;
+            }
+
+            FixtureResponse fixture = fixtureResponses.get(path);
+            if (fixture != null) {
+                if (fixture.contentType() != null) {
+                    exchange.getResponseHeaders().set("Content-Type", fixture.contentType());
+                }
+                if (fixture.contentDisposition() != null) {
+                    exchange.getResponseHeaders().set("Content-Disposition", fixture.contentDisposition());
+                }
+                if (fixture.cloudflareChallenge() != null) {
+                    exchange.getResponseHeaders().set("cf-mitigated", fixture.cloudflareChallenge());
+                    exchange.getResponseHeaders().set("Server", "cloudflare");
+                }
+                long responseLength = fixture.unknownLength() ? 0 : fixture.bytes().length;
+                exchange.sendResponseHeaders(fixture.status(), responseLength);
+                write(exchange.getResponseBody(), fixture.bytes(), 0, fixture.bytes().length, false);
                 return;
             }
 
@@ -588,6 +779,13 @@ class DownloadManagerIntegrationTest {
         MISSING_ETAG,
         UNKNOWN_TOTAL_OVERRUN,
         CHANGED_TOTAL
+    }
+
+    private record Payload(byte[] bytes, String contentType) {
+    }
+
+    private record FixtureResponse(byte[] bytes, String contentType, String contentDisposition,
+                                   boolean unknownLength, int status, String cloudflareChallenge) {
     }
 
     private static final class InterruptedThenResumeServer implements AutoCloseable {

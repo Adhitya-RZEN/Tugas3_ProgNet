@@ -84,7 +84,7 @@ public final class DownloadItemController {
         if (snapshot.status() == DownloadStatus.COMPLETED) {
             sizeLabel.setText(DownloadFormatting.bytes(snapshot.transferredBytes()));
             progressLabel.setText("100% complete");
-        } else if (snapshot.indeterminate()) {
+        } else if (snapshot.sizeUnknown()) {
             sizeLabel.setText(DownloadFormatting.bytes(snapshot.transferredBytes()) + " downloaded");
             progressLabel.setText("Size unknown");
         } else {

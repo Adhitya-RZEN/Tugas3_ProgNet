@@ -300,9 +300,9 @@ public final class DashboardController {
         completedNavCount.setText(Long.toString(completed));
         failedNavCount.setText(Long.toString(failed));
         DownloadSummary summary = DownloadSummary.calculate(snapshots);
-        totalProgressBar.setProgress(summary.progress());
-        totalProgressRing.setProgress(summary.progress());
-        totalProgress.setText(DownloadFormatting.percent(summary.progress()));
+        totalProgressBar.setProgress(summary.indicatorProgress());
+        totalProgressRing.setProgress(summary.indicatorProgress());
+        totalProgress.setText(summary.percentageLabel());
         activeSpeed.setText(DownloadFormatting.speed(summary.bytesPerSecond()));
         String eta = DownloadFormatting.eta(summary.remainingBytes(), summary.bytesPerSecond());
         totalEta.setText(eta.startsWith("ETA ") ? eta.substring(4) : eta);

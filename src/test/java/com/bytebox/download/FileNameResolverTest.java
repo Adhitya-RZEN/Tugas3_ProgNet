@@ -41,4 +41,21 @@ class FileNameResolverTest {
     void suppliesAUsefulNameWhenUrlHasNoFileName() {
         assertTrue(FileNameResolver.fileNameFrom(URI.create("https://example.test/?id=4")).startsWith("download-"));
     }
+
+    @Test
+    void prefersRfc5987FilenameAndPreservesItsExtension() {
+        String fileName = FileNameResolver.fileNameFromContentDisposition(
+                "attachment; filename=\"fallback.bin\"; filename*=UTF-8''r%C3%A9sum%C3%A9%20final.pdf");
+
+        assertEquals("résumé final.pdf", fileName);
+    }
+
+    @Test
+    void sanitizesContentDispositionPathsAndWindowsReservedNames() {
+        String fileName = FileNameResolver.fileNameFromContentDisposition("attachment; filename=\"../CON.zip\"");
+
+        assertEquals("_CON.zip", fileName);
+        assertFalse(fileName.contains("/"));
+        assertFalse(fileName.contains("\\"));
+    }
 }

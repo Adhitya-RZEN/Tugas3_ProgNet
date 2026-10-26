@@ -265,6 +265,34 @@ public final class DownloadManager implements AutoCloseable {
         }
     }
 
+    void applyContentDispositionFilename(DownloadJob job, String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return;
+        }
+        boolean changedName = false;
+        synchronized (lock) {
+            if (job.transferredBytes > 0 || job.cancelRequested
+                    || (job.status != DownloadStatus.DOWNLOADING && job.status != DownloadStatus.PAUSING)) {
+                return;
+            }
+            Collection<Path> reserved = jobs.values().stream()
+                    .filter(candidate -> candidate != job)
+                    .map(candidate -> candidate.destination)
+                    .toList();
+            Path destination = FileNameResolver.allocate(fileName, job.destination.getParent(), reserved);
+            String resolvedName = destination.getFileName().toString();
+            if (!destination.equals(job.destination) || !resolvedName.equals(job.fileName)) {
+                job.destination = destination;
+                job.fileName = resolvedName;
+                changedName = true;
+            }
+        }
+        if (changedName) {
+            persistAsync(job);
+            notifyListener();
+        }
+    }
+
     void setTotalBytes(DownloadJob job, Long totalBytes) {
         synchronized (lock) {
             job.totalBytes = totalBytes;
